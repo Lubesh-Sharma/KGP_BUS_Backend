@@ -30,11 +30,11 @@ const frontendURL = process.env.FRONTEND_URL_LOCAL;
 
 app.use(
   cors({
-    origin: "*", // Allow all origins
-    methods: "*", // Allow all methods
+    origin: [frontendURL], // Allow both production and local frontend
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"], // Add OPTIONS for preflight
     credentials: true,
-    allowedHeaders: "*", // Allow all headers
-    exposedHeaders: "*" // Expose all headers
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    exposedHeaders: ['Content-Range', 'X-Content-Range']
   })
 );
 
