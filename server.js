@@ -37,7 +37,7 @@ const frontendURL = process.env.FRONTEND_URL_LOCAL;
 
 app.use(
   cors({
-    origin: [frontendURL, "https://kgp-bus-frontend.vercel.app/"],
+    origin: [frontendURL, "https://kgp-bus-frontend.vercel.app/*"],
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"], // Add OPTIONS for preflight
     credentials: true,
     allowedHeaders: ['Content-Type', 'Authorization'],
