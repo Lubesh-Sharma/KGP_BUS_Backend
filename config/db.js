@@ -152,6 +152,8 @@ const connectDB = async () => {
         // Initialize location cleanup scheduler
         const { initLocationCleanup } = await import('./locationCleanup.js');
         initLocationCleanup();
+
+        console.log('Database connection established and tables initialized');
     } catch (err) {
         console.error('PostgreSQL connection error:', err.message);
         process.exit(1);
