@@ -20,6 +20,13 @@ import profileRouter from "./routers/profile.router.js";
 dotenv.config();
 const app = express();
 
+// Middleware to set headers
+app.use((req, res, next) => { 
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin'); 
+  res.setHeader('Cross-Origin-Embedder-Policy', 'unsafe-none'); 
+  next(); 
+});
+
 // Connect to PostgreSQL
 connectDB();
 
