@@ -40,22 +40,6 @@ app.use(
 // Ensure cookies are handled correctly
 app.use(cookieParser());
 
-// Log incoming cookies for debugging (optional)
-app.use((req, res, next) => {
-  console.log("Cookies: ", req.cookies);
-  next();
-});
-
-// Add middleware to log incoming requests and headers (optional)
-app.use((req, res, next) => {
-  console.log("Incoming Request:", {
-    method: req.method,
-    url: req.url,
-    headers: req.headers
-  });
-  next();
-});
-
 app.use(express.json({ limit: "16kb" }));
 app.use(express.urlencoded({ extended: true, limit: "16kb" }));
 
