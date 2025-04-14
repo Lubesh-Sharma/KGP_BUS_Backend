@@ -47,19 +47,28 @@ connectDB();
 app.use(bodyParser.json({ limit: '5mb' }));
 app.get("/", (req, res) => res.send({ message: "KGP Bus Service API" }));
 
+// Update CORS configuration
 app.use(
   cors({
     origin: [frontendURL, "https://kgp-bus-frontend.vercel.app"],
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    credentials: true,
-    allowedHeaders: ['Content-Type', 'Authorization'],
-    exposedHeaders: ['Content-Range', 'X-Content-Range']
+    credentials: true, // Allow credentials (cookies, authorization headers, etc.)
+    allowedHeaders: ["Content-Type", "Authorization"],
+    exposedHeaders: ["Content-Range", "X-Content-Range"]
   })
 );
 
+// Ensure cookies are handled correctly
+app.use(cookieParser());
+
+// Log incoming cookies for debugging
+app.use((req, res, next) => {
+  console.log("Cookies: ", req.cookies);
+  next();
+});
+
 app.use(express.json({ limit: "16kb" }));
 app.use(express.urlencoded({ extended: true, limit: "16kb" }));
-app.use(cookieParser());
 
 app.use(session({
   secret: process.env.SESSION_SECRET,
