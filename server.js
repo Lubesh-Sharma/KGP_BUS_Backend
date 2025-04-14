@@ -21,7 +21,7 @@ dotenv.config();
 const app = express();
 
 // Global middleware to handle CORS headers
-const allowCors = fn => async (req, res) => {
+const allowCors = fn => async (req, res, next) => {
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
@@ -33,14 +33,10 @@ const allowCors = fn => async (req, res) => {
     res.status(200).end();
     return;
   }
-  return await fn(req, res);
+  return await fn(req, res, next);
 };
 
-const handler = (req, res) => {
-  const d = new Date();
-  res.end(d.toString());
-};
-
+// Apply allowCors globally
 app.use(allowCors((req, res, next) => next()));
 
 // Connect to PostgreSQL
