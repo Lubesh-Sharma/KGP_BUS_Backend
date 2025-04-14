@@ -6,28 +6,29 @@ import dns from 'dns';
 dns.setDefaultResultOrder('ipv4first');
 
 // Define the connection string directly in the code
-const DATABASE_URL = "postgresql://postgres:Lubesh%4004@db.ayoalkdoyzkbwaionyke.supabase.co:5432/postgres";
+const DATABASE_URL="postgresql://kgp_bus:hCcetbrCRTsblLIvXvwr00p8SqIlKVjl@dpg-cvu5l1fgi27c73aeiagg-a.oregon-postgres.render.com:5432/kgp_bus";
+
 
 const pool = new Pool({
-  connectionString: DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false // This is necessary for Supabase to allow the connection
-  }
+    connectionString: DATABASE_URL, // Use the connection string from .env
+    ssl: {
+        rejectUnauthorized: false // Supabase/Render requires this for SSL
+    }
 });
 
 // Set the search path to the custom schema (kgp_bus_track)
 pool.on('connect', async (client) => {
-  await client.query('SET search_path TO kgp_bus_track');
+    await client.query('SET search_path TO kgp_bus_track');
 });
 
 // Function to initialize tables
 const initializeTables = async () => {
-  try {
-    // Create schema if it doesn't exist
-    await pool.query(`CREATE SCHEMA IF NOT EXISTS kgp_bus_track`);
+    try {
+        // Create schema if it doesn't exist
+        await pool.query(`CREATE SCHEMA IF NOT EXISTS kgp_bus_track`);
 
-    // Create users table
-    await pool.query(`
+        // Create users table
+        await pool.query(`
         CREATE TABLE IF NOT EXISTS users (
             id SERIAL PRIMARY KEY,
             username VARCHAR(100) NOT NULL,
@@ -39,8 +40,8 @@ const initializeTables = async () => {
         )
     `);
 
-    // Create bus stops table
-    await pool.query(`
+        // Create bus stops table
+        await pool.query(`
         CREATE TABLE IF NOT EXISTS bus_stops (
             id SERIAL PRIMARY KEY,
             name VARCHAR(100) NOT NULL,
@@ -50,8 +51,8 @@ const initializeTables = async () => {
         )
     `);
 
-    // Create buses table
-    await pool.query(`
+        // Create buses table
+        await pool.query(`
         CREATE TABLE IF NOT EXISTS buses (
             id SERIAL PRIMARY KEY,
             name VARCHAR(100) NOT NULL,
@@ -62,8 +63,8 @@ const initializeTables = async () => {
         )
     `);
 
-    // Create routes table with id column
-    await pool.query(`
+        // Create routes table with id column
+        await pool.query(`
         CREATE TABLE IF NOT EXISTS routes (
             id SERIAL PRIMARY KEY,
             bus_id INTEGER REFERENCES buses(id),
@@ -75,8 +76,8 @@ const initializeTables = async () => {
         )
     `);
 
-    // Create bus start time table
-    await pool.query(`
+        // Create bus start time table
+        await pool.query(`
         CREATE TABLE IF NOT EXISTS bus_start_time (
             id SERIAL PRIMARY KEY,
             bus_id INTEGER REFERENCES buses(id) ON DELETE CASCADE,
@@ -87,8 +88,8 @@ const initializeTables = async () => {
         )
     `);
 
-    // Create bus drivers table
-    await pool.query(`
+        // Create bus drivers table
+        await pool.query(`
         CREATE TABLE IF NOT EXISTS bus_drivers (
             user_id INTEGER REFERENCES users(id),
             bus_id INTEGER REFERENCES buses(id),
@@ -97,8 +98,8 @@ const initializeTables = async () => {
         )
     `);
 
-    // Create user locations table
-    await pool.query(`
+        // Create user locations table
+        await pool.query(`
         CREATE TABLE IF NOT EXISTS user_locations (
             id SERIAL PRIMARY KEY,
             user_id INTEGER REFERENCES users(id),
@@ -108,8 +109,8 @@ const initializeTables = async () => {
         )
     `);
 
-    // Create bus locations table with retention policy
-    await pool.query(`
+        // Create bus locations table with retention policy
+        await pool.query(`
         CREATE TABLE IF NOT EXISTS locations (
             id SERIAL PRIMARY KEY,
             bus_id INTEGER REFERENCES buses(id),
@@ -119,40 +120,40 @@ const initializeTables = async () => {
         )
     `);
 
-    // Create index on timestamp for better performance
-    await pool.query(`
+        // Create index on timestamp for better performance
+        await pool.query(`
         CREATE INDEX IF NOT EXISTS idx_locations_timestamp 
         ON locations(timestamp)
     `);
 
-    console.log('Database tables initialized');
-  } catch (err) {
-    console.error('Error initializing tables:', err.message);
-  }
+        console.log('Database tables initialized');
+    } catch (err) {
+        console.error('Error initializing tables:', err.message);
+    }
 };
 
 // Function to test database connection
 const connectDB = async () => {
-  try {
-    const client = await pool.connect();
-    console.log('PostgreSQL connected');
-    client.release();
+    try {
+        const client = await pool.connect();
+        console.log('PostgreSQL connected');
+        client.release();
 
-    await initializeTables();
+        await initializeTables();
 
-    // Create admin user if it doesn't exist
-    const { createAdminUser } = await import('./createAdminUser.js');
-    await createAdminUser();
+        // Create admin user if it doesn't exist
+        const { createAdminUser } = await import('./createAdminUser.js');
+        await createAdminUser();
 
-    // Initialize location cleanup scheduler
-    const { initLocationCleanup } = await import('./locationCleanup.js');
-    initLocationCleanup();
+        // Initialize location cleanup scheduler
+        const { initLocationCleanup } = await import('./locationCleanup.js');
+        initLocationCleanup();
 
-    console.log('Database connection established and tables initialized');
-  } catch (err) {
-    console.error('PostgreSQL connection error:', err.message);
-    process.exit(1);
-  }
+        console.log('Database connection established and tables initialized');
+    } catch (err) {
+        console.error('PostgreSQL connection error:', err.message);
+        process.exit(1);
+    }
 };
 
 // Export using ES module syntax
