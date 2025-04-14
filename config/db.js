@@ -13,12 +13,16 @@ const DB_CONFIG = {
 };
 
 const pool = new Pool({
-    database: DB_CONFIG.dbname,
     user: DB_CONFIG.user,
-    password: DB_CONFIG.password,
     host: DB_CONFIG.host,
-    port: DB_CONFIG.port
-});
+    database: DB_CONFIG.dbname,
+    password: DB_CONFIG.password,
+    port: parseInt(DB_CONFIG.port), // Convert from string to number
+    ssl: {
+      rejectUnauthorized: false // Supabase requires this
+    }
+  });
+  
 
 // Set search path to kgp_bus_track
 pool.on('connect', async (client) => {
