@@ -53,7 +53,7 @@ app.use(
     origin: [frontendURL, "https://kgp-bus-frontend.vercel.app"],
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     credentials: true, // Allow credentials (cookies, authorization headers, etc.)
-    allowedHeaders: ["Content-Type", "Authorization"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-CSRF-Token", "X-Requested-With", "Accept", "Accept-Version", "Content-Length", "Content-MD5", "Date", "X-Api-Version"],
     exposedHeaders: ["Content-Range", "X-Content-Range"]
   })
 );
@@ -64,6 +64,16 @@ app.use(cookieParser());
 // Log incoming cookies for debugging
 app.use((req, res, next) => {
   console.log("Cookies: ", req.cookies);
+  next();
+});
+
+// Add middleware to log incoming requests and headers
+app.use((req, res, next) => {
+  console.log("Incoming Request:", {
+    method: req.method,
+    url: req.url,
+    headers: req.headers
+  });
   next();
 });
 
