@@ -4,25 +4,35 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-const DB_CONFIG = {
-    dbname: process.env.DB_NAME,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    host: process.env.DB_HOST,
-    port: process.env.DB_PORT
-};
+// const DB_CONFIG = {
+//     dbname: process.env.DB_NAME,
+//     user: process.env.DB_USER,
+//     password: process.env.DB_PASSWORD,
+//     host: process.env.DB_HOST,
+//     port: process.env.DB_PORT
+// };
+
+// const pool = new Pool({
+//     user: DB_CONFIG.user,
+//     host: DB_CONFIG.host,
+//     database: DB_CONFIG.dbname,
+//     password: DB_CONFIG.password,
+//     port: parseInt(DB_CONFIG.port), // Convert from string to number
+//     ssl: {
+//       rejectUnauthorized: false // Supabase requires this
+//     }
+//   });
+DATABASE_URL="postgresql://postgres:Lubesh%4000@db.ayoalkdoyzkbwaionyke.supabase.co:5432/postgres"
+
+dns.setDefaultResultOrder('ipv4first'); // Prefer IPv4 to avoid ENETUNREACH
 
 const pool = new Pool({
-    user: DB_CONFIG.user,
-    host: DB_CONFIG.host,
-    database: DB_CONFIG.dbname,
-    password: DB_CONFIG.password,
-    port: parseInt(DB_CONFIG.port), // Convert from string to number
-    ssl: {
-      rejectUnauthorized: false // Supabase requires this
-    }
-  });
-  
+  connectionString: DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false
+  }
+});
+
 
 // Set search path to kgp_bus_track
 pool.on('connect', async (client) => {
