@@ -21,9 +21,11 @@ dotenv.config();
 const app = express();
 
 // Global middleware to handle CORS headers
+const frontendURL = process.env.FRONTEND_URL_LOCAL;
+
 const allowCors = fn => async (req, res, next) => {
   res.setHeader('Access-Control-Allow-Credentials', true);
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Origin', frontendURL); // Set to frontendURL
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
   res.setHeader(
     'Access-Control-Allow-Headers',
@@ -45,22 +47,15 @@ connectDB();
 app.use(bodyParser.json({ limit: '5mb' }));
 app.get("/", (req, res) => res.send({ message: "KGP Bus Service API" }));
 
-const frontendURL = process.env.FRONTEND_URL_LOCAL;
-
 app.use(
   cors({
-    origin: [frontendURL, "https://kgp-bus-frontend.vercel.app/*"],
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"], // Add OPTIONS for preflight
+    origin: [frontendURL, "https://kgp-bus-frontend.vercel.app"],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     credentials: true,
     allowedHeaders: ['Content-Type', 'Authorization'],
     exposedHeaders: ['Content-Range', 'X-Content-Range']
   })
 );
-
-app.options('*', cors({
-  origin: [frontendURL],
-  credentials: true
-}));
 
 app.use(express.json({ limit: "16kb" }));
 app.use(express.urlencoded({ extended: true, limit: "16kb" }));
