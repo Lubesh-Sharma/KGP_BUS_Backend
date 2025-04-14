@@ -80,20 +80,20 @@ export const updateUserProfile = asyncHandler(async (req, res) => {
 // Change user password
 export const changePassword = asyncHandler(async (req, res) => {
   const userId = req.params.user_id || req.user.id;
-  const { currentPassword, newPassword } = req.body;
+  const { newPassword } = req.body;
   
-  if (!currentPassword || !newPassword) {
+  if (!newPassword) {
     return res
       .status(400)
-      .json(new ApiResponse(400, null, "Current password and new password are required"));
+      .json(new ApiResponse(400, null, "New password is required"));
   }
   
   logger.info(`Changing password for user ID: ${userId}`);
 
   try {
-    // Get current user data with password
+    // Get current user data to verify user exists
     const userResult = await pool.query(
-      'SELECT password FROM users WHERE id = $1',
+      'SELECT id FROM users WHERE id = $1',
       [userId]
     );
     
@@ -101,18 +101,6 @@ export const changePassword = asyncHandler(async (req, res) => {
       return res
         .status(404)
         .json(new ApiResponse(404, null, "User not found"));
-    }
-    
-    // Check if current password matches
-    const isPasswordValid = await bcrypt.compare(
-      currentPassword,
-      userResult.rows[0].password
-    );
-    
-    if (!isPasswordValid) {
-      return res
-        .status(400)
-        .json(new ApiResponse(400, null, "Current password is incorrect"));
     }
     
     // Hash new password

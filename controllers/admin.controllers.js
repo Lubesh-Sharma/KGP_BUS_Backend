@@ -40,13 +40,34 @@ export const updateBus = asyncHandler(async (req, res) => {
 
 export const deleteBus = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const result = await pool.query('DELETE FROM buses WHERE id = $1 RETURNING id', [id]);
-
-    if (result.rows.length === 0) {
-        return res.status(404).json({ message: 'Bus not found' });
+    
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        
+        // Delete related records first
+        await client.query('DELETE FROM routes WHERE bus_id = $1', [id]);
+        await client.query('DELETE FROM bus_drivers WHERE bus_id = $1', [id]);
+        await client.query('DELETE FROM locations WHERE bus_id = $1', [id]);
+        // bus_start_time already has ON DELETE CASCADE
+        
+        // Then delete the bus
+        const result = await client.query('DELETE FROM buses WHERE id = $1 RETURNING id', [id]);
+        
+        if (result.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ message: 'Bus not found' });
+        }
+        
+        await client.query('COMMIT');
+        res.json({ message: 'Bus deleted successfully', id: result.rows[0].id });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('Error deleting bus:', err);
+        res.status(500).json({ message: 'Failed to delete bus: ' + err.message });
+    } finally {
+        client.release();
     }
-
-    res.json({ message: 'Bus deleted successfully', id: result.rows[0].id });
 });
 
 // Add new function to update bus totalRep
@@ -327,6 +348,18 @@ export const addDriver = asyncHandler(async (req, res) => {
 
         // If bus_id is provided, check if the bus already has a driver
         if (bus_id) {
+            // Check if this bus is already assigned to another driver
+            const busCheck = await client.query(
+                'SELECT user_id FROM bus_drivers WHERE bus_id = $1',
+                [bus_id]
+            );
+            
+            if (busCheck.rows.length > 0) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ 
+                    message: 'This bus is already assigned to another driver' 
+                });
+            }
 
             await client.query(
                 'INSERT INTO bus_drivers (user_id, bus_id) VALUES ($1, $2)',
@@ -384,6 +417,18 @@ export const updateDriver = asyncHandler(async (req, res) => {
         // If bus_id is provided, check if the bus is available before assigning
         if (bus_id) {
             // Check if this bus is already assigned to another driver
+            const busCheck = await client.query(
+                'SELECT user_id FROM bus_drivers WHERE bus_id = $1 AND user_id != $2',
+                [bus_id, id]
+            );
+            
+            if (busCheck.rows.length > 0) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ 
+                    message: 'This bus is already assigned to another driver' 
+                });
+            }
+
             await client.query(
                 'INSERT INTO bus_drivers (user_id, bus_id) VALUES ($1, $2)',
                 [id, bus_id]
