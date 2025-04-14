@@ -50,13 +50,16 @@ app.get("/", (req, res) => res.send({ message: "KGP Bus Service API" }));
 // Update CORS configuration
 app.use(
   cors({
-    origin: [frontendURL, "https://kgp-bus-frontend.vercel.app"],
+    origin: ["https://kgp-bus-frontend.vercel.app"],
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     credentials: true, // Allow credentials (cookies, authorization headers, etc.)
     allowedHeaders: ["Content-Type", "Authorization", "X-CSRF-Token", "X-Requested-With", "Accept", "Accept-Version", "Content-Length", "Content-MD5", "Date", "X-Api-Version"],
     exposedHeaders: ["Content-Range", "X-Content-Range"]
   })
 );
+
+// Handle preflight requests
+app.options("*", cors());
 
 // Ensure cookies are handled correctly
 app.use(cookieParser());
