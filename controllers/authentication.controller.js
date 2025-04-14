@@ -94,8 +94,8 @@ export const loginUser = asyncHandler(async (req, res) => {
     // Set cookie and return response
     res.cookie('jwtToken', token, {
       httpOnly: true,
-      secure: false,
-      sameSite: 'lax',
+      secure: true, // Ensure secure cookies
+      sameSite: 'none',
       maxAge: 3600 * 1000 * 2
     });
 
@@ -173,8 +173,8 @@ export const login_google = asyncHandler(async (req, res) => {
     // Set cookie and return response
     res.cookie('jwtToken', token, {
       httpOnly: true,
-      secure: false,
-      sameSite: 'lax',
+      secure: true, // Ensure secure cookies
+      sameSite: 'none',
       maxAge: 3600 * 1000 * 2
     });
 
@@ -201,24 +201,24 @@ export const login_google = asyncHandler(async (req, res) => {
 export const authenticateUser = asyncHandler(async (req, res) => {
   try {
     const bearerHeader = req.headers.authorization;
-    
+
     if (!bearerHeader) {
       return res.status(401).json({
         message: "Authentication Failed - No token provided"
       });
     }
-    
+
     const token = bearerHeader.split(' ')[1];
-    
+
     if (!token) {
       return res.status(401).json({
         message: "Authentication Failed - Invalid token format"
       });
     }
-    
+
     try {
       const decodedToken = jwt.verify(token, process.env.JWT_KEY);
-      
+
       // Get user from database
       const result = await pool.query(
         'SELECT id, username, email, role FROM users WHERE id = $1',
@@ -264,14 +264,14 @@ export const authenticateUser = asyncHandler(async (req, res) => {
 export const logoutUser = asyncHandler(async (req, res) => {
   try {
     const frontendURL = process.env.FRONTEND_URL_LOCAL;
-    
+
     // Clear JWT cookie
     res.clearCookie('jwtToken', {
       httpOnly: true,
-      secure: false,
-      sameSite: 'lax'
+      secure: true, // Ensure secure cookies
+      sameSite: 'none'
     });
-    
+
     logger.info("User logged out");
 
     // Respond with success message
