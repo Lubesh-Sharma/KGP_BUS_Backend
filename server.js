@@ -20,34 +20,13 @@ import profileRouter from "./routers/profile.router.js";
 dotenv.config();
 const app = express();
 
-// Global middleware to handle CORS headers
-const frontendURL = process.env.FRONTEND_URL_LOCAL;
-
-const allowCors = fn => async (req, res, next) => {
-  res.setHeader('Access-Control-Allow-Credentials', true);
-  res.setHeader('Access-Control-Allow-Origin', frontendURL); // Set to frontendURL
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
-  res.setHeader(
-    'Access-Control-Allow-Headers',
-    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
-  );
-  if (req.method === 'OPTIONS') {
-    res.status(200).end();
-    return;
-  }
-  return await fn(req, res, next);
-};
-
-// Apply allowCors globally
-app.use(allowCors((req, res, next) => next()));
-
 // Connect to PostgreSQL
 connectDB();
 
 app.use(bodyParser.json({ limit: '5mb' }));
 app.get("/", (req, res) => res.send({ message: "KGP Bus Service API" }));
 
-// Update CORS configuration
+// Updated CORS configuration
 app.use(
   cors({
     origin: ["https://kgp-bus-frontend.vercel.app"],
@@ -58,19 +37,16 @@ app.use(
   })
 );
 
-// Handle preflight requests
-app.options("*", cors());
-
 // Ensure cookies are handled correctly
 app.use(cookieParser());
 
-// Log incoming cookies for debugging
+// Log incoming cookies for debugging (optional)
 app.use((req, res, next) => {
   console.log("Cookies: ", req.cookies);
   next();
 });
 
-// Add middleware to log incoming requests and headers
+// Add middleware to log incoming requests and headers (optional)
 app.use((req, res, next) => {
   console.log("Incoming Request:", {
     method: req.method,
@@ -108,8 +84,8 @@ app.use('/profile', profileRouter);
 // Start server
 const PORT = process.env.PORT;
 app.listen(PORT, () => {
-  //console.log(`Server running on port ${PORT}`);
-  //console.log(`Frontend URL: ${frontendURL}`);
+  console.log(`Server running on port ${PORT}`); // Added a standard console log to confirm it is running
+  //console.log(`Frontend URL: ${frontendURL}`); // Removed as it references a removed config
 });
 
 export default app;
