@@ -40,35 +40,67 @@ export const updateBus = asyncHandler(async (req, res) => {
 
 export const deleteBus = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    
+
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
         
-        // Delete related records first
-        await client.query('DELETE FROM routes WHERE bus_id = $1', [id]);
-        await client.query('DELETE FROM bus_drivers WHERE bus_id = $1', [id]);
-        await client.query('DELETE FROM locations WHERE bus_id = $1', [id]);
-        // bus_start_time already has ON DELETE CASCADE
-        
-        // Then delete the bus
-        const result = await client.query('DELETE FROM buses WHERE id = $1 RETURNING id', [id]);
-        
-        if (result.rows.length === 0) {
+        // First check if the bus exists
+        const busCheck = await client.query('SELECT id FROM buses WHERE id = $1', [id]);
+        if (busCheck.rows.length === 0) {
             await client.query('ROLLBACK');
             return res.status(404).json({ message: 'Bus not found' });
         }
         
+        // console.log(`Deleting all related records for bus ID: ${id}`);
+        
+        // Delete related records first to avoid foreign key constraint violations
+        
+        // 1. Delete bus start times first - this was causing the constraint error
+        await client.query('DELETE FROM bus_start_time WHERE bus_id = $1', [id]);
+        // console.log('- Start times deleted');
+        
+        // 2. Delete route records
+        await client.query('DELETE FROM routes WHERE bus_id = $1', [id]);
+        // console.log('- Routes deleted');
+        
+        // 3. Delete bus driver assignments
+        await client.query('DELETE FROM bus_drivers WHERE bus_id = $1', [id]);
+        // console.log('- Driver assignments deleted');
+        
+        // 4. Delete location history
+        await client.query('DELETE FROM locations WHERE bus_id = $1', [id]);
+        // console.log('- Location history deleted');
+        
+        // 5. Finally delete the bus itself
+        const result = await client.query('DELETE FROM buses WHERE id = $1 RETURNING id', [id]);
+        // console.log('- Bus record deleted');
+        
         await client.query('COMMIT');
-        res.json({ message: 'Bus deleted successfully', id: result.rows[0].id });
+        res.json({ 
+            message: 'Bus and all related records deleted successfully', 
+            id: result.rows[0].id 
+        });
     } catch (err) {
         await client.query('ROLLBACK');
         console.error('Error deleting bus:', err);
-        res.status(500).json({ message: 'Failed to delete bus: ' + err.message });
+        
+        // Add specific error messages for constraint violations
+        if (err.code === '23503') {
+            res.status(500).json({ 
+                message: 'Failed to delete bus: It has related records that could not be deleted. ' + 
+                         'Please ensure all schedules and routes are removed first.' 
+            });
+        } else {
+            res.status(500).json({ message: 'Failed to delete bus: ' + err.message });
+        }
     } finally {
         client.release();
     }
 });
+
+    
+
 
 // Add new function to update bus totalRep
 export const updateBusTotalRep = asyncHandler(async (req, res) => {
@@ -89,6 +121,93 @@ export const updateBusTotalRep = asyncHandler(async (req, res) => {
     }
     
     res.json(result.rows[0]);
+});
+
+// Enhanced bus location endpoint with more debugging
+export const getBusLocation = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    
+    if (!id) {
+        // console.log('Bus ID is missing in request');
+        return res.status(400).json({ message: 'Bus ID is required' });
+    }
+
+    try {
+        // console.log(`Executing location query for bus ID: ${id}`);
+        
+        // First try to get the actual location data
+        const result = await pool.query(`
+            SELECT id, bus_id, timestamp, 
+                   latitude::float as latitude, 
+                   longitude::float as longitude
+            FROM locations 
+            WHERE bus_id = $1 
+            ORDER BY timestamp DESC 
+            LIMIT 1
+        `, [id]);
+
+        // Log the query results
+        // console.log(`Query returned ${result.rows.length} rows`);
+        
+        // If we found a real location record, return it
+        if (result.rows.length > 0) {
+            const location = result.rows[0];
+            // console.log(`Location found for bus ID ${id}:`, location);
+            
+            // Explicitly convert to numbers to ensure proper JSON serialization
+            return res.json({
+                id: location.id,
+                bus_id: parseInt(location.bus_id),
+                timestamp: location.timestamp,
+                latitude: parseFloat(location.latitude),
+                longitude: parseFloat(location.longitude)
+            });
+        }
+        
+        // console.log(`No location found in database for bus ID: ${id}, generating test data`);
+        
+        // If no location data exists, create some test data based on first bus stop
+        const routeResult = await pool.query(`
+            SELECT r.id, r.bus_id, bs.id as stop_id, bs.name, bs.latitude, bs.longitude
+            FROM routes r
+            JOIN bus_stops bs ON r.bus_stop_id = bs.id
+            WHERE r.bus_id = $1
+            ORDER BY r.stop_order
+            LIMIT 1
+        `, [id]);
+        
+        if (routeResult.rows.length > 0) {
+            const firstStop = routeResult.rows[0];
+            
+            // Generate test data using the first stop's location
+            const testLocation = {
+                id: 0,
+                bus_id: parseInt(id),
+                timestamp: new Date(),
+                latitude: parseFloat(firstStop.latitude),
+                longitude: parseFloat(firstStop.longitude),
+                is_test_data: true
+            };
+            
+            // console.log(`Generated test location for bus ID ${id}:`, testLocation);
+            return res.json(testLocation);
+        }
+        
+        // Absolute fallback - create a default position at IIT Kharagpur
+        // console.log(`No route data found for bus ID: ${id}, using default location`);
+        return res.json({
+            id: 0,
+            bus_id: parseInt(id),
+            timestamp: new Date(),
+            latitude: 22.3190,
+            longitude: 87.3091,
+            is_test_data: true,
+            is_default: true
+        });
+    } catch (err) {
+        console.error('Error getting bus location:', err);
+        res.status(500).json({ message: 'Failed to retrieve bus location: ' + err.message });
+    }
 });
 
 // Bus Stop Controllers
@@ -331,7 +450,6 @@ export const getDrivers = asyncHandler(async (req, res) => {
 
 export const addDriver = asyncHandler(async (req, res) => {
     const client = await pool.connect();
-
     try {
         await client.query('BEGIN');
         const { name, email, password, bus_id } = req.body;
@@ -343,7 +461,6 @@ export const addDriver = asyncHandler(async (req, res) => {
             'INSERT INTO users (username, email, password, role) VALUES ($1, $2, $3, $4) RETURNING *',
             [name, email, hashedPassword, 'driver']
         );
-
         const user = userResult.rows[0];
 
         // If bus_id is provided, check if the bus already has a driver
@@ -353,7 +470,7 @@ export const addDriver = asyncHandler(async (req, res) => {
                 'SELECT user_id FROM bus_drivers WHERE bus_id = $1',
                 [bus_id]
             );
-            
+
             if (busCheck.rows.length > 0) {
                 await client.query('ROLLBACK');
                 return res.status(400).json({ 
@@ -366,9 +483,7 @@ export const addDriver = asyncHandler(async (req, res) => {
                 [user.id, bus_id]
             );
         }
-
         await client.query('COMMIT');
-
         // Return the user data
         //console.log('Driver added successfully:', user);
         res.status(201).json({
@@ -383,14 +498,13 @@ export const addDriver = asyncHandler(async (req, res) => {
     }
 });
 
+
 export const updateDriver = asyncHandler(async (req, res) => {
     const client = await pool.connect();
-
     try {
         await client.query('BEGIN');
         const { id } = req.params;
         const { name, email, password, bus_id } = req.body;
-
         // Update user details
         let userResult;
         if (password && password.trim() !== '') {
@@ -405,15 +519,12 @@ export const updateDriver = asyncHandler(async (req, res) => {
                 [name, email, id, 'driver']
             );
         }
-
         if (userResult.rows.length === 0) {
             await client.query('ROLLBACK');
             return res.status(404).json({ message: 'Driver not found' });
         }
-
         // Remove current bus assignment
         await client.query('DELETE FROM bus_drivers WHERE user_id = $1', [id]);
-
         // If bus_id is provided, check if the bus is available before assigning
         if (bus_id) {
             // Check if this bus is already assigned to another driver
@@ -421,7 +532,7 @@ export const updateDriver = asyncHandler(async (req, res) => {
                 'SELECT user_id FROM bus_drivers WHERE bus_id = $1 AND user_id != $2',
                 [bus_id, id]
             );
-            
+
             if (busCheck.rows.length > 0) {
                 await client.query('ROLLBACK');
                 return res.status(400).json({ 
@@ -434,9 +545,7 @@ export const updateDriver = asyncHandler(async (req, res) => {
                 [id, bus_id]
             );
         }
-
         await client.query('COMMIT');
-
         const user = userResult.rows[0];
         res.json({
             ...user,
@@ -449,6 +558,9 @@ export const updateDriver = asyncHandler(async (req, res) => {
         client.release();
     }
 });
+
+
+
 
 export const deleteDriver = asyncHandler(async (req, res) => {
     const client = await pool.connect();

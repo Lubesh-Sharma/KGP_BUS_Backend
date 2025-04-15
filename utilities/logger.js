@@ -10,7 +10,7 @@ export const logger = {
     if (sanitizedData.password) sanitizedData.password = '********';
     if (sanitizedData.token) sanitizedData.token = '********';
     
-    //console.log(`[INFO] ${message}`, sanitizedData);
+    ////console.log(`[INFO] ${message}`, sanitizedData);
   },
   
   // Error logs
@@ -43,12 +43,12 @@ export const logger = {
       if (sanitizedData.password) sanitizedData.password = '********';
       if (sanitizedData.token) sanitizedData.token = '********';
       
-      //console.log(`[DEBUG] ${message}`, sanitizedData);
+      ////console.log(`[DEBUG] ${message}`, sanitizedData);
     }
   },
   
   // Security events should be logged carefully
   security: (message) => {
-    //console.log(`[SECURITY] ${message}`);
+    ////console.log(`[SECURITY] ${message}`);
   }
 };

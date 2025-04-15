@@ -50,7 +50,36 @@ export const getBusLocation = asyncHandler(async (req, res) => {
     }
 });
 
-// Get bus route information
+// Get bus location only (for background updates without affecting routes)
+export const getBusLocationOnly = asyncHandler(async (req, res) => {
+    const busId = req.params.id;
+    logger.info(`Fetching minimal location data for bus ID: ${busId}`);
+    
+    try {
+        // Get the most recent location only
+        const result = await pool.query(
+            'SELECT latitude, longitude, timestamp FROM locations WHERE bus_id = $1 ORDER BY timestamp DESC LIMIT 1',
+            [busId]
+        );
+        
+        if (result.rows.length === 0) {
+            logger.info(`No location found for bus ID: ${busId}`);
+            return res
+                .status(404)
+                .json(new ApiResponse(404, null, "Bus location not found"));
+        }
+        
+        logger.info(`Minimal location data found for bus ID: ${busId}`);
+        return res
+            .status(200)
+            .json(new ApiResponse(200, result.rows[0], "Bus location fetched successfully"));
+    } catch (error) {
+        logger.error(`Error fetching minimal location for bus ID: ${busId}`, error);
+        throw new ApiError(500, "Error fetching bus location from database");
+    }
+});
+
+// Get bus route information with ETAs for all stops
 export const getBusRoute = asyncHandler(async (req, res) => {
     const busId = req.params.id;
     logger.info(`Fetching route for bus ID: ${busId}`);
@@ -58,7 +87,7 @@ export const getBusRoute = asyncHandler(async (req, res) => {
     try {
         // Get all stops for this bus
         const stopResult = await pool.query(
-            `SELECT r.stop_order, bs.id, bs.name, bs.latitude, bs.longitude 
+            `SELECT r.stop_order, r.time_from_start, bs.id, bs.name, bs.latitude, bs.longitude 
              FROM routes r 
              JOIN bus_stops bs ON r.bus_stop_id = bs.id 
              WHERE r.bus_id = $1 
@@ -79,6 +108,29 @@ export const getBusRoute = asyncHandler(async (req, res) => {
             [busId]
         );
         
+        // Get the current trip (rep) number of the bus
+        const busInfoResult = await pool.query(
+            'SELECT currentRep FROM buses WHERE id = $1',
+            [busId]
+        );
+        
+        const currentRep = busInfoResult.rows[0]?.currentRep || 1;
+        
+        // Get the start time for the current trip
+        const startTimeResult = await pool.query(
+            'SELECT start_time FROM bus_start_time WHERE bus_id = $1 AND rep_no = $2',
+            [busId, currentRep]
+        );
+        
+        let startTime = null;
+        if (startTimeResult.rows.length > 0) {
+            startTime = startTimeResult.rows[0].start_time;
+        } else {
+            // If no start time found for current rep, use current time as fallback
+            startTime = new Date().toTimeString().split(' ')[0];
+            logger.info(`No start time found for bus ID: ${busId}, rep: ${currentRep}. Using current time.`);
+        }
+        
         let currentStop = null;
         let nextStop = null;
         
@@ -86,12 +138,7 @@ export const getBusRoute = asyncHandler(async (req, res) => {
             const location = locationResult.rows[0];
             const stops = stopResult.rows;
             
-            // Determine current and next stop
-            // In a real application, you would use more sophisticated logic with geolocation
-            // This is a simplified example
-            
-            // For demo purposes, let's simulate that we're between stops based on bus location
-            // Find closest stop to be the "current" stop
+            // Determine current and next stop based on location
             let minDistance = Infinity;
             let closestStopIndex = 0;
             
@@ -113,17 +160,55 @@ export const getBusRoute = asyncHandler(async (req, res) => {
             currentStop = stops[closestStopIndex];
             
             // Next stop is the one after the closest
-            // If we're at the last stop, wrap around to the first one (circular route)
             nextStop = stops[(closestStopIndex + 1) % stops.length];
-        } else {
-            // If no location data, just provide first stop as next stop
-            nextStop = stopResult.rows[0];
+            
+            // Calculate estimated arrival times for all stops
+            const now = new Date();
+            const currentTime = new Date();
+            
+            // Parse the start time
+            const [startHours, startMinutes, startSeconds] = startTime.split(':').map(Number);
+            const startTimeDate = new Date();
+            startTimeDate.setHours(startHours, startMinutes, startSeconds, 0);
+            
+            // If start time is in the future (for next day's first trip), adjust the date
+            if (startTimeDate > now) {
+                startTimeDate.setDate(startTimeDate.getDate() - 1);
+            }
+            
+            // Calculate ETAs for all stops
+            stops.forEach(stop => {
+                // Calculate ETA based on start time + time_from_start
+                const etaDate = new Date(startTimeDate);
+                const timeFromStartMinutes = parseFloat(stop.time_from_start);
+                etaDate.setMinutes(etaDate.getMinutes() + timeFromStartMinutes);
+                
+                // Format time as HH:MM
+                const hours = etaDate.getHours().toString().padStart(2, '0');
+                const minutes = etaDate.getMinutes().toString().padStart(2, '0');
+                const formattedTime = `${hours}:${minutes}`;
+                
+                // If the calculated time is in the past, it means the bus has likely passed this stop
+                const hasPassed = etaDate < currentTime;
+                
+                // For passed stops, show the calculated ETA with a passed indicator
+                if (hasPassed && stop.stop_order <= currentStop.stop_order) {
+                    stop.eta_minutes = -1;
+                    stop.eta_time = `${formattedTime} (Passed)`;
+                } else {
+                    // Calculate minutes from now
+                    const diffInMinutes = Math.max(0, Math.round((etaDate - currentTime) / 60000));
+                    stop.eta_minutes = diffInMinutes;
+                    stop.eta_time = formattedTime;
+                }
+            });
         }
         
         const routeData = {
             stops: stopResult.rows,
             currentStop,
-            nextStop
+            nextStop,
+            currentRep
         };
         
         logger.info(`Route found for bus ID: ${busId} with ${stopResult.rows.length} stops`);
@@ -136,7 +221,7 @@ export const getBusRoute = asyncHandler(async (req, res) => {
     }
 });
 
-// Get bus information including driver
+// Get bus information including driver and more accurate ETA
 export const getBusInfo = asyncHandler(async (req, res) => {
     const busId = req.params.id;
     logger.info(`Fetching info for bus ID: ${busId}`);
@@ -144,7 +229,7 @@ export const getBusInfo = asyncHandler(async (req, res) => {
     try {
         // Get bus details with driver information
         const result = await pool.query(
-            `SELECT b.id, b.name, u.username as driver_name, 
+            `SELECT b.id, b.name, b.currentRep, u.username as driver_name, 
                     bd.user_id as driver_id
              FROM buses b
              LEFT JOIN bus_drivers bd ON b.id = bd.bus_id
@@ -160,14 +245,14 @@ export const getBusInfo = asyncHandler(async (req, res) => {
                 .json(new ApiResponse(404, null, "Bus info not found"));
         }
         
-        // Get current location and route info to calculate ETA
+        // Get current location and route info
         const locationResult = await pool.query(
             'SELECT * FROM locations WHERE bus_id = $1 ORDER BY timestamp DESC LIMIT 1',
             [busId]
         );
         
         const routeResult = await pool.query(
-            `SELECT r.stop_order, bs.id, bs.name, bs.latitude, bs.longitude 
+            `SELECT r.stop_order, r.time_from_start, bs.id, bs.name, bs.latitude, bs.longitude 
              FROM routes r 
              JOIN bus_stops bs ON r.bus_stop_id = bs.id 
              WHERE r.bus_id = $1 
@@ -175,13 +260,27 @@ export const getBusInfo = asyncHandler(async (req, res) => {
             [busId]
         );
         
-        let estimatedArrival = null;
+        // Get start time for current trip
+        const currentRep = result.rows[0].currentrep || 1;
+        const startTimeResult = await pool.query(
+            'SELECT start_time FROM bus_start_time WHERE bus_id = $1 AND rep_no = $2',
+            [busId, currentRep]
+        );
         
-        if (locationResult.rows.length > 0 && routeResult.rows.length > 0) {
+        let startTime = null;
+        if (startTimeResult.rows.length > 0) {
+            startTime = startTimeResult.rows[0].start_time;
+        }
+        
+        let estimatedArrival = null;
+        let nextStopName = null;
+        let nextStopId = null;
+        
+        if (locationResult.rows.length > 0 && routeResult.rows.length > 0 && startTime) {
             const location = locationResult.rows[0];
             const stops = routeResult.rows;
             
-            // Find next stop
+            // Find closest stop (likely the last stop passed)
             let minDistance = Infinity;
             let closestStopIndex = 0;
             
@@ -200,29 +299,57 @@ export const getBusInfo = asyncHandler(async (req, res) => {
                 }
             }
             
-            // Next stop is the one after the closest
+            // Get next stop
             const nextStopIndex = (closestStopIndex + 1) % stops.length;
             const nextStop = stops[nextStopIndex];
+            nextStopName = nextStop.name;
+            nextStopId = nextStop.id;
             
-            // Calculate estimated arrival time (simplified)
-            // Assume average speed of 20 km/h (5.56 m/s)
-            const averageSpeed = 5.56; // meters per second
+            // Calculate ETA based on start time and time_from_start
+            const now = new Date();
             
-            const distanceToNextStop = calculateDistance(
-                parseFloat(location.latitude), 
-                parseFloat(location.longitude),
-                parseFloat(nextStop.latitude),
-                parseFloat(nextStop.longitude)
-            );
+            // Parse the start time
+            const [startHours, startMinutes, startSeconds] = startTime.split(':').map(Number);
+            const startTimeDate = new Date();
+            startTimeDate.setHours(startHours, startMinutes, startSeconds, 0);
             
-            // Convert distance (in meters) to time (in minutes)
-            estimatedArrival = Math.round(distanceToNextStop / averageSpeed / 60);
+            // If start time is in the future (for next day's first trip), adjust the date
+            if (startTimeDate > now) {
+                startTimeDate.setDate(startTimeDate.getDate() - 1);
+            }
+            
+            // Calculate ETA based on start time + time_from_start for next stop
+            const etaDate = new Date(startTimeDate);
+            const timeFromStartMinutes = parseFloat(nextStop.time_from_start);
+            etaDate.setMinutes(etaDate.getMinutes() + timeFromStartMinutes);
+            
+            // Calculate minutes from now
+            estimatedArrival = Math.max(1, Math.round((etaDate - now) / 60000));
+            
+            // If ETA is unreasonably high (e.g., over 60 minutes), fall back to distance-based calculation
+            if (estimatedArrival > 60) {
+                // Calculate estimated arrival time (simplified)
+                // Assume average speed of 20 km/h (5.56 m/s)
+                const averageSpeed = 5.56; // meters per second
+                
+                const distanceToNextStop = calculateDistance(
+                    parseFloat(location.latitude), 
+                    parseFloat(location.longitude),
+                    parseFloat(nextStop.latitude),
+                    parseFloat(nextStop.longitude)
+                );
+                
+                // Convert distance (in meters) to time (in minutes)
+                estimatedArrival = Math.round(distanceToNextStop / averageSpeed / 60);
+            }
         }
         
         const busInfo = {
             ...result.rows[0],
             driverName: result.rows[0].driver_name,
-            estimatedArrival
+            estimatedArrival,
+            nextStopName,
+            nextStopId
         };
         
         logger.info(`Info found for bus ID: ${busId}`);

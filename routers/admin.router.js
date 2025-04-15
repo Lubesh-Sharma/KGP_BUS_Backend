@@ -1,11 +1,12 @@
 import { Router } from 'express';
-import { pool } from '../config/db.js'; // Add this import
+import { pool } from '../config/db.js'; 
 import { 
   getBuses, addBus, updateBus, deleteBus, updateBusTotalRep,
   getBusStops, addBusStop, updateBusStop, deleteBusStop,
   getRoutes, addRoute, updateRoute, deleteRoute, getBusRoute,
   getDrivers, addDriver, updateDriver, deleteDriver,
-  getStatistics,  getUsers, getUserById, addUser, updateUser, deleteUser
+  getStatistics, getUsers, getUserById, addUser, updateUser, deleteUser,
+  getBusLocation // Make sure this import is here
 } from '../controllers/admin.controllers.js';
 import { 
   getBusStartTimes, addBusStartTime, updateStartTime, deleteStartTime 
@@ -18,24 +19,37 @@ const router = Router();
 // Add adminApiAuth middleware to all admin routes
 router.use(adminApiAuth);
 
+// Add a test endpoint to help debug route issues
+router.get('/test-route', (req, res) => {
+  res.json({
+    message: 'Admin routes are working correctly',
+    availableRoutes: {
+      busLocation: '/admin/buses/:id/location'
+    }
+  });
+});
+
 // Bus management routes
 router.get('/buses', getBuses);
 
+// IMPORTANT: The more specific route needs to come BEFORE the more general route
+// Add bus location endpoint - moved up in the order
+router.get('/buses/:id/location', getBusLocation);
 
-// Fix the get bus by ID route
+// Fix the get bus by ID route - now this won't capture /buses/:id/location requests
 router.get('/buses/:id', async (req, res) => { 
   try {
     const busId = req.params.id;
-    //console.log(`Fetching bus details for ID: ${busId}`);
+    console.log(`Fetching bus details for ID: ${busId}`);
     
     const result = await pool.query('SELECT * FROM buses WHERE id = $1', [busId]);
     
     if (result.rows.length === 0) {
-      //console.log(`Bus not found with ID: ${busId}`);
+      console.log(`Bus not found with ID: ${busId}`);
       return res.status(404).json({ message: 'Bus not found' });
     }
     
-    //console.log(`Bus found: ${JSON.stringify(result.rows[0])}`);
+    console.log(`Bus found: ${JSON.stringify(result.rows[0])}`);
     res.json(result.rows[0]);
   } catch (err) {
     console.error('Error fetching bus:', err);

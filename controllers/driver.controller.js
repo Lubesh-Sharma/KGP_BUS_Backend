@@ -180,15 +180,51 @@ export const clearStop = asyncHandler(async (req, res) => {
             throw new ApiError(404, "This stop is not in the route for this bus");
         }
         
-        // Increment the stops_cleared counter
-        const result = await pool.query(
-            `UPDATE buses SET stops_cleared = stops_cleared + 1 WHERE id = $1 RETURNING *`,
+        // Get total number of stops in the route
+        const totalStopsResult = await pool.query(
+            `SELECT COUNT(*) as total_stops FROM routes WHERE bus_id = $1`,
             [busId]
         );
         
-        logger.info(`Stop ID: ${stopId} marked as cleared for bus ID: ${busId}`);
+        const totalStops = parseInt(totalStopsResult.rows[0].total_stops);
+        
+        // Get current stop information
+        const currentStopResult = await pool.query(
+            `SELECT stop_order FROM routes WHERE bus_id = $1 AND bus_stop_id = $2`,
+            [busId, stopId]
+        );
+        
+        const currentStopOrder = parseInt(currentStopResult.rows[0].stop_order);
+        
+        let result;
+        
+        // Check if this is the last stop in the route
+        if (currentStopOrder === totalStops) {
+            // Last stop in the route - increment currentRep and reset stops_cleared to 1
+            result = await pool.query(
+                `UPDATE buses 
+                 SET stops_cleared = 0, currentRep = currentRep + 1 
+                 WHERE id = $1 
+                 RETURNING *`,
+                [busId]
+            );
+            logger.info(`Last stop reached for bus ID: ${busId}. Incrementing currentRep and resetting stops_cleared.`);
+        } else {
+            // Not the last stop - just increment stops_cleared as before
+            result = await pool.query(
+                `UPDATE buses SET stops_cleared = stops_cleared + 1 WHERE id = $1 RETURNING *`,
+                [busId]
+            );
+        }
+        
         return res.status(200).json(
-            new ApiResponse(200, result.rows[0], "Bus stop marked as cleared")
+            new ApiResponse(
+                200, 
+                result.rows[0], 
+                currentStopOrder === totalStops ? 
+                    "Last bus stop cleared, new repetition started" : 
+                    "Bus stop marked as cleared"
+            )
         );
     } catch (error) {
         logger.error(`Error clearing stop for bus ID: ${busId}`, error);

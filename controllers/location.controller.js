@@ -92,7 +92,7 @@ export const getBusLocations = asyncHandler(async (req, res) => {
 // Get all user locations (admin only)
 export const getAllUserLocations = asyncHandler(async (req, res) => {
     try {
-        //console.log('Fetching user locations for admin...');
+        console.log('Fetching user locations for admin...');
         
         // First, check if the users table has 'username' or 'name' column
         const columnCheck = await pool.query(`
@@ -103,14 +103,14 @@ export const getAllUserLocations = asyncHandler(async (req, res) => {
             AND table_schema = 'kgp_bus_track'
         `);
         
-        //console.log('Column check result:', columnCheck.rows);
+        console.log('Column check result:', columnCheck.rows);
         
         // Determine which column to use based on the check
         const usernameColumn = columnCheck.rows.find(row => row.column_name === 'username') 
             ? 'username' 
             : 'name';
         
-        //console.log(`Using '${usernameColumn}' column for usernames`);
+        console.log(`Using '${usernameColumn}' column for usernames`);
         
         // Use the determined column name in the query
         const result = await pool.query(`
@@ -128,18 +128,18 @@ export const getAllUserLocations = asyncHandler(async (req, res) => {
             ORDER BY ul.timestamp DESC
         `);
 
-        //console.log(`Found ${result.rows.length} user locations`);
+        console.log(`Found ${result.rows.length} user locations`);
         
         if (result.rows.length === 0) {
-            //console.log('No user locations found in database');
+            console.log('No user locations found in database');
             
             // Check if there are any users at all
             const usersCheck = await pool.query(`SELECT COUNT(*) FROM users`);
-            //console.log(`Total users in database: ${usersCheck.rows[0].count}`);
+            console.log(`Total users in database: ${usersCheck.rows[0].count}`);
             
             // Check if there are any locations at all
             const locationsCheck = await pool.query(`SELECT COUNT(*) FROM user_locations`);
-            //console.log(`Total user locations in database: ${locationsCheck.rows[0].count}`);
+            console.log(`Total user locations in database: ${locationsCheck.rows[0].count}`);
         }
         
         // Parse latitude and longitude to ensure they're numbers
@@ -157,7 +157,7 @@ export const getAllUserLocations = asyncHandler(async (req, res) => {
         }));
         
         if (locations.length > 0) {
-            //console.log('Sample location data:', locations[0]);
+            console.log('Sample location data:', locations[0]);
         }
         
         res.json(locations);
