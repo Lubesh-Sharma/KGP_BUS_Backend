@@ -76,7 +76,7 @@ const initializeTables = async () => {
                 name VARCHAR(100) NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 stops_cleared INT DEFAULT 0,
-                totalRep integer DEFAULT 0,
+                totalRep integer DEFAULT 1,
                 currentRep integer DEFAULT 1
             )
         `);

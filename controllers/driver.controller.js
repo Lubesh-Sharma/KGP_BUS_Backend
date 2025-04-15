@@ -58,18 +58,13 @@ export const getDriverBus = asyncHandler(async (req, res) => {
         if (routeResult.rows.length > 0) {
             const stops = routeResult.rows;
 
-            // If stopsCleared is 0, the last cleared stop is the last one in the route (circular)
-            // and the next stop is the first in the route
+            // Use stopsCleared as array index
             if (stopsCleared === 0) {
-                lastClearedStop = stops[stops.length - 1];
+                lastClearedStop = null;
                 nextStop = stops[0];
             } else {
-                // Normalize stopsCleared to be within the route length (for circular routes)
-                const normalizedStopsCleared = stopsCleared % stops.length;
-                // Last cleared stop is the one at index (normalizedStopsCleared - 1)
-                lastClearedStop = stops[normalizedStopsCleared - 1];
-                // Next stop is the one at index normalizedStopsCleared
-                nextStop = stops[normalizedStopsCleared % stops.length];
+                lastClearedStop = stops[stopsCleared - 1] || null;
+                nextStop = stops[stopsCleared % stops.length] || null;
             }
         }
 
@@ -180,37 +175,46 @@ export const clearStop = asyncHandler(async (req, res) => {
             throw new ApiError(404, "This stop is not in the route for this bus");
         }
 
-        // Get total number of stops in the route
-        const totalStopsResult = await pool.query(
-            `SELECT COUNT(*) as total_stops FROM routes WHERE bus_id = $1`,
+        // Get the route for this bus (all stops in order)
+        const routeStopsResult = await pool.query(
+            `SELECT r.id, r.bus_id, r.stop_order, bs.id as stop_id, bs.name, bs.latitude, bs.longitude
+             FROM routes r
+             JOIN bus_stops bs ON r.bus_stop_id = bs.id
+             WHERE r.bus_id = $1
+             ORDER BY r.stop_order`,
             [busId]
         );
+        const stops = routeStopsResult.rows;
+        const totalStops = stops.length;
 
-        const totalStops = parseInt(totalStopsResult.rows[0].total_stops);
-
-        // Get current stop information
-        const currentStopResult = await pool.query(
-            `SELECT stop_order FROM routes WHERE bus_id = $1 AND bus_stop_id = $2`,
-            [busId, stopId]
+        // Get current stops_cleared
+        const busResult = await pool.query(
+            `SELECT stops_cleared, totalRep, currentRep FROM buses WHERE id = $1`,
+            [busId]
         );
-
-        const currentStopOrder = parseInt(currentStopResult.rows[0].stop_order);
+        let stopsCleared = parseInt(busResult.rows[0]?.stops_cleared || 0);
+        let totalRep = parseInt(busResult.rows[0]?.totalrep || 1);
+        let currentRep = parseInt(busResult.rows[0]?.currentrep || 1);
 
         let result;
+        if (totalStops === 0) {
+            throw new ApiError(400, "No stops in route");
+        }
 
-        // Check if this is the last stop in the route
-        if (currentStopOrder === totalStops) {
-            // Last stop in the route - increment currentRep and reset stops_cleared to 1
+        // If at last stop, reset to 0 and increment currentRep (wrap if needed)
+        if (stopsCleared + 1 >= totalStops) {
+            // Wrap currentRep if needed
+            const newRep = (currentRep + 1 > totalRep) ? 1 : currentRep + 1;
             result = await pool.query(
                 `UPDATE buses 
-                 SET stops_cleared = 0, currentRep = currentRep + 1 
+                 SET stops_cleared = 0, currentRep = $2 
                  WHERE id = $1 
                  RETURNING *`,
-                [busId]
+                [busId, newRep]
             );
             logger.info(`Last stop reached for bus ID: ${busId}. Incrementing currentRep and resetting stops_cleared.`);
         } else {
-            // Not the last stop - just increment stops_cleared as before
+            // Just increment stops_cleared
             result = await pool.query(
                 `UPDATE buses SET stops_cleared = stops_cleared + 1 WHERE id = $1 RETURNING *`,
                 [busId]
@@ -221,7 +225,7 @@ export const clearStop = asyncHandler(async (req, res) => {
             new ApiResponse(
                 200,
                 result.rows[0],
-                currentStopOrder === totalStops ?
+                stopsCleared + 1 >= totalStops ?
                     "Last bus stop cleared, new repetition started" :
                     "Bus stop marked as cleared"
             )

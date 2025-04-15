@@ -52,8 +52,8 @@ export const getBusRouteWithStops = asyncHandler(async (req, res) => {
     let stopsCleared = 0;
     let currentRep = 1;
     if (busResult.rows.length > 0) {
-      stopsCleared = busResult.rows[0].stops_cleared;
-      currentRep = busResult.rows[0].currentrep; // PostgreSQL returns column names in lowercase
+      stopsCleared = parseInt(busResult.rows[0].stops_cleared || 0);
+      currentRep = parseInt(busResult.rows[0].currentrep || 1);
     }
 
     // 3. Get the start time for this bus and repetition
@@ -82,32 +82,35 @@ export const getBusRouteWithStops = asyncHandler(async (req, res) => {
     let nextStop = null;
     let estimatedArrival = null;
 
-    if (locationResult.rows.length > 0) {
-      const location = locationResult.rows[0];
+    const stops = stopsResult.rows;
 
-      // Use stopsCleared to determine current and next stop
-      currentStop = stopsResult.rows.find(stop => stop.stop_order === stopsCleared) || null;
-      nextStop = stopsResult.rows.find(stop => stop.stop_order === (stopsCleared + 1)) || null;
-
-      // If next stop exists, calculate estimated arrival using distance and average speed
-      if (nextStop) {
-        const avgSpeed = 5.56;  // average speed in meters per second (approx. 20 km/h)
-        const distanceToNextStop = calculateDistance(
-          parseFloat(location.latitude),
-          parseFloat(location.longitude),
-          parseFloat(nextStop.latitude),
-          parseFloat(nextStop.longitude)
-        );
-        estimatedArrival = Math.round(distanceToNextStop / avgSpeed / 60); // ETA in minutes
+    // Use stopsCleared as array index
+    if (stops.length > 0) {
+      if (stopsCleared === 0) {
+        currentStop = null;
+        nextStop = stops[0];
+      } else {
+        currentStop = stops[stopsCleared - 1] || null;
+        nextStop = stops[stopsCleared % stops.length] || null;
       }
-    } else {
-      // Fallback: if no location data exists, default next stop to first stop
-      nextStop = stopsResult.rows[0];
+    }
+
+    // If next stop exists, calculate estimated arrival using distance and average speed
+    if (nextStop && locationResult.rows.length > 0) {
+      const location = locationResult.rows[0];
+      const avgSpeed = 5.56;  // average speed in meters per second (approx. 20 km/h)
+      const distanceToNextStop = calculateDistance(
+        parseFloat(location.latitude),
+        parseFloat(location.longitude),
+        parseFloat(nextStop.latitude),
+        parseFloat(nextStop.longitude)
+      );
+      estimatedArrival = Math.round(distanceToNextStop / avgSpeed / 60); // ETA in minutes
     }
 
     // 5. Annotate each stop with a "cleared" property and estimated_time
-    const stops = stopsResult.rows.map(stop => {
-      const isCleared = stop.stop_order <= stopsCleared;
+    const stopsWithStatus = stops.map((stop, idx) => {
+      const isCleared = idx < stopsCleared;
       let estimated_time = "Schedule pending";
 
       // If we have a start time, calculate the scheduled time for this stop
@@ -153,36 +156,18 @@ export const getBusRouteWithStops = asyncHandler(async (req, res) => {
 
     // Update current and next stop references to include the new properties
     if (currentStop) {
-      currentStop = stops.find(s => s.id === currentStop.id);
+      currentStop = stopsWithStatus.find(s => s.id === currentStop.id);
     }
     if (nextStop) {
-      nextStop = stops.find(s => s.id === nextStop.id);
+      nextStop = stopsWithStatus.find(s => s.id === nextStop.id);
     }
 
     const routeData = {
-      stops,
+      stops: stopsWithStatus,
       currentStop,
       nextStop,
       estimatedArrival: estimatedArrival ? `${estimatedArrival} min` : null
     };
-
-    // Add time calculation details to debug logs
-    //console.log("===== TIME CALCULATION DETAILS =====");
-    //console.log("Start Time from DB:", startTime);
-    //console.log("Current Rep:", currentRep);
-
-    if (startTime) {
-      // Log the time_from_start values and calculated times for all stops
-      //console.log("\nScheduled times for each stop:");
-      stops.forEach(stop => {
-        //console.log(`  Stop #${stop.stop_order} (${stop.name}):`);
-        //console.log(`    time_from_start: ${stop.time_from_start} minutes`);
-        //console.log(`    Calculated time: ${stop.estimated_time}`);
-      });
-    } else {
-      //console.log("No start time available from bus_start_time table");
-    }
-    //console.log("===== TIME CALCULATION DETAILS END =====");
 
     logger.info(`Route with stops fetched for bus ID: ${busId}`);
     return res

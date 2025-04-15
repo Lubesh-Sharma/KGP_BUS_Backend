@@ -110,11 +110,17 @@ export const getBusRoute = asyncHandler(async (req, res) => {
         
         // Get the current trip (rep) number of the bus
         const busInfoResult = await pool.query(
-            'SELECT currentRep FROM buses WHERE id = $1',
+            'SELECT currentRep, stops_cleared FROM buses WHERE id = $1',
             [busId]
         );
         
         const currentRep = busInfoResult.rows[0]?.currentRep || 1;
+        const stopsCleared = parseInt(busInfoResult.rows[0]?.stops_cleared || 0);
+        
+        // // Debug logging for stops_cleared
+        // console.log("BACKEND - BUS ID:", busId);
+        // console.log("BACKEND - STOPS_CLEARED:", stopsCleared);
+        // console.log("BACKEND - STOPS ARRAY:", stopResult.rows);
         
         // Get the start time for the current trip
         const startTimeResult = await pool.query(
@@ -128,7 +134,7 @@ export const getBusRoute = asyncHandler(async (req, res) => {
         } else {
             // If no start time found for current rep, use current time as fallback
             startTime = new Date().toTimeString().split(' ')[0];
-            logger.info(`No start time found for bus ID: ${busId}, rep: ${currentRep}. Using current time.`);
+            // logger.info(`No start time found for bus ID: ${busId}, rep: ${currentRep}. Using current time.`);
         }
         
         let currentStop = null;
@@ -188,19 +194,11 @@ export const getBusRoute = asyncHandler(async (req, res) => {
                 const minutes = etaDate.getMinutes().toString().padStart(2, '0');
                 const formattedTime = `${hours}:${minutes}`;
                 
-                // If the calculated time is in the past, it means the bus has likely passed this stop
-                const hasPassed = etaDate < currentTime;
-                
-                // For passed stops, show the calculated ETA with a passed indicator
-                if (hasPassed && stop.stop_order <= currentStop.stop_order) {
-                    stop.eta_minutes = -1;
-                    stop.eta_time = `${formattedTime} (Passed)`;
-                } else {
-                    // Calculate minutes from now
-                    const diffInMinutes = Math.max(0, Math.round((etaDate - currentTime) / 60000));
-                    stop.eta_minutes = diffInMinutes;
-                    stop.eta_time = formattedTime;
-                }
+                // Only calculate minutes from now, but don't mark as "Passed"
+                // Let the frontend handle that based on stops_cleared
+                const diffInMinutes = Math.max(0, Math.round((etaDate - currentTime) / 60000));
+                stop.eta_minutes = diffInMinutes;
+                stop.eta_time = formattedTime;
             });
         }
         
@@ -208,15 +206,28 @@ export const getBusRoute = asyncHandler(async (req, res) => {
             stops: stopResult.rows,
             currentStop,
             nextStop,
-            currentRep
+            currentRep,
+            bus: {
+                id: busId,
+                stops_cleared: stopsCleared  // Explicitly include stops_cleared in response
+            }
         };
         
-        logger.info(`Route found for bus ID: ${busId} with ${stopResult.rows.length} stops`);
+        // Debug log final route data
+        // console.log("BACKEND - FINAL ROUTE DATA:", {
+        //     busId,
+        //     stopsCleared,
+        //     totalStops: stopResult.rows.length,
+        //     currentStop: routeData.currentStop?.name,
+        //     nextStop: routeData.nextStop?.name
+        // });
+        
+        // logger.info(`Route found for bus ID: ${busId} with ${stopResult.rows.length} stops`);
         return res
             .status(200)
             .json(new ApiResponse(200, routeData, "Bus route fetched successfully"));
     } catch (error) {
-        logger.error(`Error fetching route for bus ID: ${busId}`, error);
+        // logger.error(`Error fetching route for bus ID: ${busId}`, error);
         throw new ApiError(500, "Error fetching bus route from database");
     }
 });
@@ -224,7 +235,7 @@ export const getBusRoute = asyncHandler(async (req, res) => {
 // Get bus information including driver and more accurate ETA
 export const getBusInfo = asyncHandler(async (req, res) => {
     const busId = req.params.id;
-    logger.info(`Fetching info for bus ID: ${busId}`);
+    // logger.info(`Fetching info for bus ID: ${busId}`);
     
     try {
         // Get bus details with driver information
@@ -239,7 +250,7 @@ export const getBusInfo = asyncHandler(async (req, res) => {
         );
         
         if (result.rows.length === 0) {
-            logger.info(`No info found for bus ID: ${busId}`);
+            // logger.info(`No info found for bus ID: ${busId}`);
             return res
                 .status(404)
                 .json(new ApiResponse(404, null, "Bus info not found"));
@@ -352,12 +363,12 @@ export const getBusInfo = asyncHandler(async (req, res) => {
             nextStopId
         };
         
-        logger.info(`Info found for bus ID: ${busId}`);
+        // logger.info(`Info found for bus ID: ${busId}`);
         return res
             .status(200)
             .json(new ApiResponse(200, busInfo, "Bus info fetched successfully"));
     } catch (error) {
-        logger.error(`Error fetching info for bus ID: ${busId}`, error);
+        // logger.error(`Error fetching info for bus ID: ${busId}`, error);
         throw new ApiError(500, "Error fetching bus info from database");
     }
 });
